@@ -3,7 +3,7 @@
 HealthyPi v4 is a HAT for the Raspberry Pi, as well as a standalone device that can measure human vital signs that are useful in medical diagnosis and treatment. HealthyPi v4 sets a new standard in open source health solutions with mobility, wireless and wearable capabilities. This device presents a snapshot of the user's medical condition within his/her environment and opens up medical research possibilities.
 
 
-![HealthyPi Display](docs/images/HealthyPi_Complete.jpg)
+![HealthyPi Display](images/HealthyPi_Complete.jpg)
 
 HealthyPi v4 measures the following parameters in real-time and with high accuracy:
 
