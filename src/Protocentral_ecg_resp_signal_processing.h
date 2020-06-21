@@ -29,6 +29,7 @@ class ads1292r_processing
     void Filter_CurrentRESP_sample(int16_t CurrAqsSample, int16_t * FiltOut);
     void Calculate_RespRate(int16_t CurrSample,volatile uint8_t *RespirationRate);
     void Respiration_Rate_Detection(int16_t Resp_wave,volatile uint8_t *RespirationRate);
+    void CalcResRate(int16_t* resData);
 };
 
 #endif

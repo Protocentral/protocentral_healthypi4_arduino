@@ -431,6 +431,23 @@ void ads1292r_processing :: Filter_CurrentRESP_sample(int16_t CurrAqsSample, int
 
 }
 
+void ads1292r_processing :: CalcResRate(int16_t* resData)
+{
+  /*
+  int maxVal = Math.max(...this.resGraphData);
+  int minVal = Math.min(...this.resGraphData);
+  int diff = maxVal - minVal;
+  int _resthreshold = minVal + ((diff/100) * 80);
+
+  locations = this._peakDetector(this.resGraphData, this._resthreshold, this.width)
+  for (i = 0; i < locations.length - 1; i++) {
+          cycleDis.push(locations[i + 1] - locations[i]);
+        }
+        resRate = 60 / (this._average(cycleDis) * (0.005));
+        if ((resRate < 70 && resRate >= 10))
+          this.resRate = resRate.toFixed();
+          */
+}
 
 void ads1292r_processing :: Calculate_RespRate(int16_t CurrSample,volatile uint8_t *RespirationRate)
 {

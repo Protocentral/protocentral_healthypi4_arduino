@@ -1,0 +1,175 @@
+<script>
+  MonitorBehavior = {
+    properties : {
+      dt:{
+        type: Number,
+        value: 0.002,
+      },
+    },
+    /** finds the average of the 'arrData' **/
+    _average: function (arrData) {
+      if (arrData.length === 0)
+        return 0;
+      return arrData.reduce((a, b) => a + b) / arrData.length;
+    },
+
+    /** filters the raw data with bandpass, high pass and other filtering process as required **/
+    _filterSignal: function (signalData) {
+      return signalData;
+    },
+
+    /** computes the average of our N time samples, and subtract that average value from each original sample to yield a new time sequence **/
+    /** whose DC bias will be extremely small.**/
+    _removeDCBias: function (signalData, avgLen) {
+      var runningAvg = [];
+      var biasRemovedData = [];
+      var runningAvg2=[];
+      var avg = 0;
+      var halfAvgLen = Math.round(avgLen / 2);
+      var i = 0;
+      avg = this._average(signalData.slice(i, i + avgLen)); 
+      biasRemovedData.push((signalData[i + halfAvgLen]) - avg);
+      runningAvg.push(avg);
+
+      for (i = 1; i < signalData.length - avgLen; i++) {
+        avg = ((avg * avgLen) - signalData[i-1] + signalData[i + avgLen]) / avgLen;
+        biasRemovedData.push((signalData[i + halfAvgLen]) - avg);
+        runningAvg.push(avg);
+      }
+      // for (i = 0; i < runningAvg.length - avgLen; i++) {
+      //   var avgR = this._average(runningAvg.slice(i, i + halfAvgLen));
+      //   runningAvg2.push(avgR);
+      //   biasRemovedData.push((signalData[i + halfAvgLen]) - avgR);
+      // }
+      return {'biasRemovedData': biasRemovedData,'runningAvg': runningAvg};
+      // the biasRemovedData losses avgLen * 2 data from the actual signal Data.
+    },
+
+    /** Finds the locations of peaks in Signal In **/
+    _peakDetector: function (dataPoints, threshold, width) {
+      if (width === undefined) {
+        width = 5;
+      }
+      var peakStart;
+      var isthresholdCrossed = false;
+      var peakLocations = [];
+      var locations = [];
+
+      //points that are above threshold
+      dataPoints.forEach(function (data, index) {
+        if (data >= threshold) {
+          peakLocations.push(index);
+        }
+      }, this);
+
+      //finds peak locations in the points that are above threshold and of minimum width in each region
+      for (i = 0; i < peakLocations.length; i++) {
+        if (isthresholdCrossed) {
+          if ((peakLocations[i + 1] - peakLocations[i] == 1) && (i !== peakLocations.length - 1)) {
+            continue;
+          } else {
+            if ((i - peakStart) >= (width - 1)) {
+              var peakRegion = dataPoints.slice(peakLocations[peakStart], peakLocations[i]);
+              // console.log(peakRegion);
+              var peak = Math.max.apply(null, peakRegion);
+              locations.push(peakLocations[peakStart + peakRegion.indexOf(peak)]);
+              isthresholdCrossed = false;
+            } else{
+              isthresholdCrossed = false;
+            }
+          }
+        } else {
+          if (peakLocations[i + 1] - peakLocations[i] === 1) {
+            peakStart = i;
+            isthresholdCrossed = true;
+          }
+        }
+      }
+      return locations;
+    },
+
+    /** Finds the locations of valleys in Signal In **/
+    _valleyDetector: function (dataPoints, threshold, width) {
+      if (width === undefined) {
+        width = 5;
+      }
+      var valleyStart;
+      var isthresholdCrossed = false;
+      var valleyLocations = [];
+      var locations = [];
+
+      dataPoints.forEach(function (data, index) {
+        if (data <= threshold) {
+          valleyLocations.push(index);
+        }
+      }, this);
+
+      for (i = 0; i < valleyLocations.length; i++) {
+
+        if (isthresholdCrossed) {
+          if ((valleyLocations[i + 1] - valleyLocations[i] == 1) & (i !== valleyLocations.length - 1)) {
+            continue;
+          } else {
+            if ((i - valleyStart) >= (width - 1)) {
+              var valleyRegion = dataPoints.slice(valleyLocations[valleyStart], valleyLocations[i]);
+              var valley = Math.min.apply(null, valleyRegion);
+              locations.push(valleyLocations[valleyStart + valleyRegion.indexOf(valley)]);
+              isthresholdCrossed = false;
+            }else{
+              isthresholdCrossed = false;
+            }
+          }
+        } else {
+          if (valleyLocations[i + 1] - valleyLocations[i] === 1) {
+            valleyStart = i;
+            isthresholdCrossed = true;
+          }
+        }
+      }
+      return locations;
+    },
+  }
+
+</script>
+
+
+// Resp Mon
+
+this.$.respMon.processRes(this._rawData.res);
+
+processRes: function (resRawData) {
+
+        this.resGraphData = this.$.lowpass.process(resRawData);
+        // filteredData = this._removeDCBias(filteredData, 500).biasRemovedData;
+        // this.resGraphData = [];
+        var index = 0 ;
+        // for (var i = 0; i < filteredData.length ; i = i + 5)
+        // {
+        //   this.resGraphData[index++] = filteredData[i];
+        // }
+        this._calcResRate();
+      },
+
+      _calcResRate: function () {
+        var locations = [];
+        var resRate = this.resRate;
+        var cycleDis = [];
+        var maxVal = Math.max(...this.resGraphData);
+        var minVal = Math.min(...this.resGraphData);
+        var diff = maxVal - minVal;
+        this._resthreshold = minVal + ((diff/100) * 80)
+        
+        locations = this._peakDetector(this.resGraphData, this._resthreshold, this.width)
+        for (i = 0; i < locations.length - 1; i++) {
+          cycleDis.push(locations[i + 1] - locations[i]);
+        }
+        resRate = 60 / (this._average(cycleDis) * (0.005));
+        if ((resRate < 70 && resRate >= 10))
+          this.resRate = resRate.toFixed();
+      },
+      ready: function () {
+        this.async(function () {
+          this.$.lowpass.createFilter(this.lpFilterParam, 'lowpass');
+          this.isattached = true;
+        })
+      }
