@@ -34,6 +34,8 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 
+#include "arduinoFFT.h"
+
 #define Heartrate_SERVICE_UUID (uint16_t(0x180D))
 #define Heartrate_CHARACTERISTIC_UUID (uint16_t(0x2A37))
 #define sp02_SERVICE_UUID (uint16_t(0x1822))
@@ -199,6 +201,27 @@ MAX30205 tempSensor;
 spo2_algorithm spo2;
 ads1292r_data ads1292r_raw_data;
 afe44xx_data afe44xx_raw_data;
+
+//Respiration rate calculation
+
+#define RESP_BUFFER_SIZE 2048 //128*10 secs
+
+int16_t resp_buffer[RESP_BUFFER_SIZE];
+uint16_t resp_buffer_counter = 0;
+
+arduinoFFT FFT = arduinoFFT(); /* Create FFT object */
+
+double vReal[RESP_BUFFER_SIZE];
+double vImag[RESP_BUFFER_SIZE];
+
+#define SCL_INDEX 0x00
+#define SCL_TIME 0x01
+#define SCL_FREQUENCY 0x02
+#define SCL_PLOT 0x03
+
+const double samplingFrequency = 128;
+const uint16_t samples = RESP_BUFFER_SIZE; //This value MUST ALWAYS be a power of 2
+
 
 class MyServerCallbacks : public BLEServerCallbacks
 {
