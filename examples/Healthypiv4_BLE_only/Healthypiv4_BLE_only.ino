@@ -1367,6 +1367,49 @@ void loop()
     ecg_wave_sample = (int16_t)(ads1292r_raw_data.raw_ecg >> 8) ;  // ignore the lower 8 bits out of 24bits
     res_wave_sample = (int16_t)(ads1292r_raw_data.raw_resp>>8) ;
 
+    if (resp_buffer_counter < RESP_BUFFER_SIZE)
+    {
+      resp_buffer[resp_buffer_counter] = res_wave_sample;
+      resp_buffer_counter++;
+    }
+    else
+    {
+      for (uint16_t i = 0; i < RESP_BUFFER_SIZE; i++)
+      {
+        vReal[i] = resp_buffer[i] * 1.0; /* Build data with positive and negative values*/
+        //vReal[i] = uint8_t((amplitude * (sin((i * (twoPi * cycles)) / samples) + 1.0)) / 2.0);/* Build data displaced on the Y axis to include only positive values*/
+        vImag[i] = 0.0; //Imaginary part must be zeroed in case of looping to avoid wrong calculations and overflows
+      }
+
+      FFT.Windowing(vReal, samples, FFT_WIN_TYP_HAMMING, FFT_FORWARD); /* Weigh data */
+      FFT.Compute(vReal, vImag, samples, FFT_FORWARD);                 /* Compute FFT */
+      FFT.ComplexToMagnitude(vReal, vImag, samples);                   /* Compute magnitudes */
+      double x = FFT.MajorPeak(vReal, samples, samplingFrequency);
+      x = x * 60;
+      if (global_RespirationRate <= 0)
+      {
+        global_RespirationRate = uint8_t(x);
+      }
+      else
+      {
+        if (abs(x - global_RespirationRate) > 75)
+        {
+          if (x < global_RespirationRate)
+          {
+            global_RespirationRate = uint8_t(x);
+          }
+        }
+        else
+        {
+          global_RespirationRate = uint8_t(x);
+        }
+      }
+      //Serial.println(x, 6);
+      //Do FFT here
+      //Start writing for beginning
+      resp_buffer_counter = 0;
+    }
+
     if (!((ads1292r_raw_data.status_reg & 0x1f) == 0))
     {
       leadoff_detected  = true;
@@ -1383,7 +1426,7 @@ void loop()
       ECG_RESPIRATION_ALGORITHM.Filter_CurrentECG_sample(&ecg_wave_sample, &ecg_filterout);   // filter out the line noise @40Hz cutoff 161 order
       ECG_RESPIRATION_ALGORITHM.Calculate_HeartRate(ecg_filterout,&global_HeartRate,&npeakflag); // calculate
       ECG_RESPIRATION_ALGORITHM.Filter_CurrentRESP_sample(res_wave_sample, &resp_filterout);
-      ECG_RESPIRATION_ALGORITHM.Calculate_RespRate(resp_filterout,&global_RespirationRate);
+      //ECG_RESPIRATION_ALGORITHM.Calculate_RespRate(resp_filterout,&global_RespirationRate);
 
       if(npeakflag == 1)
       {
