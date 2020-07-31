@@ -34,6 +34,8 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 
+#include "arduinoFFT.h"
+
 #define Heartrate_SERVICE_UUID (uint16_t(0x180D))
 #define Heartrate_CHARACTERISTIC_UUID (uint16_t(0x2A37))
 #define sp02_SERVICE_UUID (uint16_t(0x1822))
@@ -135,7 +137,7 @@ int16_t ppg_wave_ir;
 int16_t ecg_wave_sample,ecg_filterout;
 int16_t res_wave_sample,resp_filterout;
 
-uint32_t hr_histgrm[HISTGRM_DATA_SIZE];
+
 
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
@@ -201,100 +203,27 @@ spo2_algorithm spo2;
 ads1292r_data ads1292r_raw_data;
 afe44xx_data afe44xx_raw_data;
 
-class MyServerCallbacks: public BLEServerCallbacks
-{
-  void onConnect(BLEServer* pServer)
-  {
-    deviceConnected = true;
-    Serial.println("connected");
-  }
+//Respiration rate calculation 
 
-  void onDisconnect(BLEServer* pServer)
-  {
-    deviceConnected = false;
-  }
-};
+#define RESP_BUFFER_SIZE 2048 //128*10 secs
 
-class MyCallbackHandler: public BLECharacteristicCallbacks
-{
-  void onWrite(BLECharacteristic *datastream_Characteristic)
-  {
-    std::string value = datastream_Characteristic->getValue();
-    int len = value.length();
-    strValue = "0";
+int16_t resp_buffer[RESP_BUFFER_SIZE];
+uint16_t resp_buffer_counter=0;
 
-    if (value.length() > 0)
-    {
-      Serial.print("New value: ");
+arduinoFFT FFT = arduinoFFT(); /* Create FFT object */
 
-      for (int i = 0; i < value.length(); i++)
-      {
-        Serial.print(String(value[i]));
-        strValue += value[i];
-      }
+double vReal[RESP_BUFFER_SIZE];
+double vImag[RESP_BUFFER_SIZE];
 
-      Serial.println();
-    }
+uint32_t hr_histgrm[HISTGRM_DATA_SIZE];
 
-  }
-};
+#define SCL_INDEX 0x00
+#define SCL_TIME 0x01
+#define SCL_FREQUENCY 0x02
+#define SCL_PLOT 0x03
 
-String processor(const String& var)
-{
-
-  if(var == "heartrate")
-  {
-    return String(global_HeartRate);
-  }
-
-  return String();
-}
-
-WebServer server(80);
-
-void response()
-{
-
-  if(server.hasArg("SSID") && server.hasArg("Password") && (server.arg("Password").length()>7))
-  {
-    ssid_to_connect = server.arg("SSID");
-    password_to_connect = server.arg("Password");
-    server.send(200, "text/html", "<html><body><h3>Successfully Changed the Network Credentials. It is restarting.<br></h3><h3>After restart connect to the changed network. In case if it is not connected in 60sec it will go to the softAp mode.<br><br>Enter healthypi.local/ in the address bar. If it is not connecting, use the IP address of the connected network which is printed in the serial moniter<br><br></h3></body></html>");
-    Serial.print("SSID: ");
-    Serial.println(ssid_to_connect);
-    Serial.print("Password: ");
-    Serial.println(password_to_connect);
-    credential_success_flag = true;
-  }
-  else
-  {
-    server.send(400, "text/html", "<html><body><h1>HTTP Error 400</h1><p>Bad request. Please enter a value.</p></body></html>");
-    credential_success_flag = false;
-  }
-
-}
-
-void handleRoot()
-{
-  server.sendHeader("Location", "/main.html",true);   //Redirect to our html web page
-  server.send(303, "text/plane","");
-}
-
-void handleheartrate()
-{
-  int ln = tmp_ecgbu.length();
-  server.setContentLength(ln);
-  index_cnt = 0;
-  number_of_samples = 0;
-  server.send(200, "text/html", tmp_ecgbu);
-}
-
-void handletemperature()
-{
-  char sensor_data[20];
-  sprintf(sensor_data, "%d,%d,%d,%d", global_HeartRate, global_RespirationRate, afe44xx_raw_data.spo2, temperature);
-  server.send(200, "text/html", sensor_data); //Send ADC value only to client ajax request
-}
+const double samplingFrequency = 128;
+const uint16_t samples = 2048; //This value MUST ALWAYS be a power of 2
 
 void push_button_intr_handler()
 {
@@ -307,17 +236,6 @@ void push_button_intr_handler()
 
 }
 
-void slideswitch_intr_handler()
-{
-
-  if(!processing_intrpt)
-  {
-    processing_intrpt = true;
-    detachInterrupt(ADS1292_DRDY_PIN);
-    slide_switch_flag = true;
-  }
-
-}
 
 void delLine(fs::FS &fs, const char * path, uint32_t line,const int char_to_delete)
 {
@@ -524,6 +442,33 @@ void add_hr_histgrm(uint8_t hr)
 
 }
 
+void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType)
+{
+  for (uint16_t i = 0; i < bufferSize; i++)
+  {
+    double abscissa;
+    /* Print abscissa value */
+    switch (scaleType)
+    {
+      case SCL_INDEX:
+        abscissa = (i * 1.0);
+  break;
+      case SCL_TIME:
+        abscissa = ((i * 1.0) / samplingFrequency);
+  break;
+      case SCL_FREQUENCY:
+        abscissa = ((i * 1.0 * samplingFrequency) / samples);
+  break;
+    }
+    Serial.print(abscissa, 6);
+    if(scaleType==SCL_FREQUENCY)
+      Serial.print("Hz");
+    Serial.print(" ");
+    Serial.println(vData[i], 4);
+  }
+ Serial.println();
+}
+
 uint8_t* read_send_data(uint8_t peakvalue,uint8_t respirationrate)
 {
   int meanval;
@@ -698,9 +643,6 @@ void V3_mode_indication()
 
 }
 
-
-
-
 void send_data_serial_port(void)
 {
 
@@ -742,22 +684,10 @@ void setup()
   int buttonState = digitalRead(SLIDE_SWITCH);
   Serial.println(buttonState);
 
-  if(!SPIFFS.begin())
-  {
-    Serial.println("An Error has occurred while mounting SPIFFS");
-    return;
-  }
-  else
-  {
-    Serial.println("SPIFFS initialization completed");
-  }
-
   Healthypi_Mode = V3_MODE;
 
   pinMode(PUSH_BUTTON, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(PUSH_BUTTON), push_button_intr_handler, FALLING);
-  pinMode(SLIDE_SWITCH, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(SLIDE_SWITCH), slideswitch_intr_handler,CHANGE);
 
   if(Healthypi_Mode == V3_MODE)
   {
@@ -783,6 +713,11 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(ADS1292_DRDY_PIN),ads1292r_interrupt_handler, FALLING ); // Digital2 is attached to Data ready pin of AFE is interrupt0 in ARduino
   tempSensor.begin();
   Serial.println("Initialization is complete");
+
+  for(int i=0;i<RESP_BUFFER_SIZE;i++)
+  {
+    resp_buffer[i]=0;    
+  }
 }
 
 void loop()
@@ -793,6 +728,43 @@ void loop()
   {
     ecg_wave_sample = (int16_t)(ads1292r_raw_data.raw_ecg >> 8) ;  // ignore the lower 8 bits out of 24bits
     res_wave_sample = (int16_t)(ads1292r_raw_data.raw_resp>>8) ;
+
+    if(resp_buffer_counter<RESP_BUFFER_SIZE)
+    {
+      resp_buffer[resp_buffer_counter]=res_wave_sample;
+      resp_buffer_counter++;
+      //Serial.println(resp_buffer_counter);
+    }
+    else
+    {
+      for (uint16_t i = 0; i < RESP_BUFFER_SIZE; i++)
+      {
+        vReal[i] = resp_buffer[i]*1.0;/* Build data with positive and negative values*/
+        //vReal[i] = uint8_t((amplitude * (sin((i * (twoPi * cycles)) / samples) + 1.0)) / 2.0);/* Build data displaced on the Y axis to include only positive values*/
+        vImag[i] = 0.0; //Imaginary part must be zeroed in case of looping to avoid wrong calculations and overflows
+      }
+
+      //Serial.println("Data:");
+      //PrintVector(vReal, samples, SCL_TIME);
+      FFT.Windowing(vReal, samples, FFT_WIN_TYP_HAMMING, FFT_FORWARD);  /* Weigh data */
+      //PrintVector(vReal, samples, SCL_TIME);
+      FFT.Compute(vReal, vImag, samples, FFT_FORWARD); /* Compute FFT */
+      //Serial.println("Computed Real values:");
+      //PrintVector(vReal, samples, SCL_INDEX);
+      //Serial.println("Computed Imaginary values:");
+      //PrintVector(vImag, samples, SCL_INDEX);
+      FFT.ComplexToMagnitude(vReal, vImag, samples); /* Compute magnitudes */
+      //Serial.println("Computed magnitudes:");
+      //PrintVector(vReal, (samples >> 1), SCL_FREQUENCY);
+      double x = FFT.MajorPeak(vReal, samples, samplingFrequency);
+      x=x*60;
+      global_RespirationRate = uint8_t(x);
+      //Serial.println(x, 6);
+      //Do FFT here 
+      //Start writing for beginning
+      resp_buffer_counter=0;
+    }
+    
 
     if (!((ads1292r_raw_data.status_reg & 0x1f) == 0))
     {
@@ -810,7 +782,9 @@ void loop()
       ECG_RESPIRATION_ALGORITHM.Filter_CurrentECG_sample(&ecg_wave_sample, &ecg_filterout);   // filter out the line noise @40Hz cutoff 161 order
       ECG_RESPIRATION_ALGORITHM.Calculate_HeartRate(ecg_filterout,&global_HeartRate,&npeakflag); // calculate
       ECG_RESPIRATION_ALGORITHM.Filter_CurrentRESP_sample(res_wave_sample, &resp_filterout);
-      ECG_RESPIRATION_ALGORITHM.Calculate_RespRate(resp_filterout,&global_RespirationRate);
+
+      
+      //ECG_RESPIRATION_ALGORITHM.Calculate_RespRate(resp_filterout,&global_RespirationRate);
 
       if(npeakflag == 1)
       {
@@ -818,43 +792,6 @@ void loop()
         //disabled histogram. hist characteristic is used for ppg and respiration data stream.
         //add_hr_histgrm(global_HeartRate);
         npeakflag = 0;
-      }
-
-      if(Healthypi_Mode == BLE_MODE)
-      {
-        ecg_data_buff[ecg_stream_cnt++] = (uint8_t)ecg_filterout;//ecg_filterout;
-        ecg_data_buff[ecg_stream_cnt++] = (ecg_filterout>>8);//(ecg_filterout>>8);
-
-        resp_data_buff[resp_stream_cnt++] = (uint8_t) resp_filterout;
-        resp_data_buff[resp_stream_cnt++] = (resp_filterout>>8);
-        if(ecg_stream_cnt >=18)
-        {
-          ecg_buf_ready = true;
-          ecg_stream_cnt = 0;
-        }
-
-        if(resp_stream_cnt >=19)
-        {
-          resp_buf_ready = true;
-          resp_stream_cnt = 1;
-        }
-
-      }
-      else if(Healthypi_Mode == WEBSERVER_MODE)
-      {
-
-        if(index_cnt< 1200)
-        {
-          static uint8_t ec = 0;
-          tmp_ecgbu += String(ecg_wave_sample);
-          tmp_ecgbu += String(",");
-          number_of_samples++;
-        }
-        else
-        {
-          // Do Nothing
-        }
-
       }
 
       DataPacket[14] = global_RespirationRate;
@@ -916,10 +853,9 @@ void loop()
       read_battery_value();
     }
 
-    if(Healthypi_Mode == V3_MODE)
-    {
-      send_data_serial_port();
-    }
+    
+     send_data_serial_port();
+
 
   }
 
