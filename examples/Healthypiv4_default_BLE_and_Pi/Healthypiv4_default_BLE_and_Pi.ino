@@ -1014,7 +1014,7 @@ void handle_ble_stack()
 
   if (hrv_ready_flag)
   {
-    hrv_Characteristic->setValue(hrv_array, 13);
+    hrv_Characteristic->setValue(hrv_array, 11);
     hrv_Characteristic->notify();
     hrv_ready_flag = false;
   }
