@@ -745,7 +745,7 @@ uint8_t *read_send_data(uint8_t peakvalue, uint8_t respirationrate)
     sdnn = sdnn_f * 100;
     pnn = pnn_f * 100;
     rmsd = rmssd_f * 100;
-
+    
     hrv_array[0] = meanval;
     hrv_array[1] = meanval >> 8;
     hrv_array[2] = meanval >> 16;
@@ -754,9 +754,9 @@ uint8_t *read_send_data(uint8_t peakvalue, uint8_t respirationrate)
     hrv_array[5] = sdnn >> 8;
     hrv_array[6] = pnn;
     hrv_array[7] = pnn >> 8;
-    hrv_array[10] = rmsd;
-    hrv_array[11] = rmsd >> 8;
-    hrv_array[12] = respirationrate;
+    hrv_array[8] = rmsd;
+    hrv_array[9] = rmsd >> 8;
+    hrv_array[10] = respirationrate;
     hrv_ready_flag = true;
   }
 }
@@ -1013,7 +1013,7 @@ void handle_ble_stack()
 
   if (hrv_ready_flag)
   {
-    hrv_Characteristic->setValue(hrv_array, 13);
+    hrv_Characteristic->setValue(hrv_array, 11);
     hrv_Characteristic->notify();
     hrv_ready_flag = false;
   }
