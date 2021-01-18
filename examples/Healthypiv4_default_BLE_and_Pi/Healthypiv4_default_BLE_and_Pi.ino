@@ -29,6 +29,7 @@
 #include "Protocentral_AFE4490_Oximeter.h"
 #include "Protocentral_MAX30205.h"
 #include "Protocentral_spo2_algorithm.h"
+#include "Protocentral_MLX90632.h"
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -69,6 +70,9 @@
 #define MAX 20
 #define PPG_DATA 0X00
 #define RESP_DATA 0X01
+#define SENSOR_NOTFOUND 0xffff
+#define TMP_MLX90632  2
+#define TMP_MAX30205  0x01
 
 unsigned int array[MAX];
 
@@ -137,6 +141,7 @@ int16_t ecg_wave_sample, ecg_filterout;
 int16_t res_wave_sample, resp_filterout;
 
 uint32_t hr_histgrm[HISTGRM_DATA_SIZE];
+int temperatureSensor = SENSOR_NOTFOUND;
 
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
@@ -198,6 +203,7 @@ ads1292r ADS1292R;                             // define class ads1292r
 ads1292r_processing ECG_RESPIRATION_ALGORITHM; // define class ecg_algorithm
 AFE4490 afe4490;
 MAX30205 tempSensor;
+Protocentral_MLX90632 mlx90632;
 spo2_algorithm spo2;
 ads1292r_data ads1292r_raw_data;
 afe44xx_data afe44xx_raw_data;
@@ -259,6 +265,47 @@ class MyCallbackHandler : public BLECharacteristicCallbacks
     }
   }
 };
+
+
+float readTempData(void){
+
+  if(temperatureSensor == TMP_MAX30205){
+    return (tempSensor.getTemperature());
+  }else if(temperatureSensor == TMP_MLX90632){
+   return ( mlx90632.getSensorTemp());
+  }
+
+  Serial.println("unable to read temperature ");
+  return 0xffff;
+}
+
+bool scanAvailableTempSensors(void){
+
+  Wire.beginTransmission (MAX30205_ADDRESS1);
+  if (Wire.endTransmission () == 0){
+    tempSensor.max30205Address = MAX30205_ADDRESS1;
+    temperatureSensor = TMP_MAX30205;
+
+    return true;
+  }
+
+  Wire.beginTransmission (MAX30205_ADDRESS2);
+  if(Wire.endTransmission () == 0){
+    tempSensor.max30205Address = MAX30205_ADDRESS2;
+    temperatureSensor = TMP_MAX30205;
+
+    return true;
+  }
+
+  Wire.beginTransmission (MLX90632_ADDRESS);
+  if(Wire.endTransmission () == 0){
+
+    temperatureSensor = TMP_MLX90632;
+    return true;
+  }
+
+  return false;
+}
 
 String processor(const String &var)
 {
@@ -1340,19 +1387,33 @@ void setup()
   }
 
   SPI.begin();
-  Wire.begin(25, 22);
   SPI.setClockDivider(SPI_CLOCK_DIV16);
   SPI.setBitOrder(MSBFIRST);
   SPI.setDataMode(SPI_MODE0);
   delay(10);
+
   afe4490.afe44xxInit(AFE4490_CS_PIN, AFE4490_PWDN_PIN);
   delay(10);
+
   SPI.setDataMode(SPI_MODE1); //Set SPI mode as 1
   delay(10);
+
   ADS1292R.ads1292_Init(ADS1292_CS_PIN, ADS1292_PWDN_PIN, ADS1292_START_PIN); //initalize ADS1292 slave
   delay(10);
+
   attachInterrupt(digitalPinToInterrupt(ADS1292_DRDY_PIN), ads1292r_interrupt_handler, FALLING); // Digital2 is attached to Data ready pin of AFE is interrupt0 in ARduino
-  tempSensor.begin();
+
+  Wire.begin(25, 22);
+  if(scanAvailableTempSensors()){
+    if(temperatureSensor == TMP_MLX90632){
+      mlx90632.begin();
+    }else if(temperatureSensor = TMP_MAX30205){
+      tempSensor.begin();
+    }
+  }else{
+    Serial.println("Couldn't find temperature sensor !!");
+  }
+
   Serial.println("Initialization is complete");
 }
 
@@ -1516,14 +1577,17 @@ void loop()
 
     SPI.setDataMode(SPI_MODE1);
 
-    if ((time_count++ * (1000 / SAMPLING_RATE)) > MAX30205_READ_INTERVAL)
+    if ((time_count++ * (1000 / SAMPLING_RATE)) > MAX30205_READ_INTERVAL )
     {
-      temp = tempSensor.getTemperature() * 100; // read temperature for every 100ms
-      temperature = (uint16_t)temp;
+      if(temperatureSensor != SENSOR_NOTFOUND ){
+        temp = readTempData() * 100; // read temperature for every 100ms
+        temperature = (uint16_t)temp;
+        DataPacket[12] = (uint8_t)temperature;
+        DataPacket[13] = (uint8_t)(temperature >> 8);
+        temp_data_ready = true;
+      }else scanAvailableTempSensors();
+
       time_count = 0;
-      DataPacket[12] = (uint8_t)temperature;
-      DataPacket[13] = (uint8_t)(temperature >> 8);
-      temp_data_ready = true;
       //reading the battery with same interval as temp sensor
       read_battery_value();
     }

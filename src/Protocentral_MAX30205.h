@@ -18,7 +18,8 @@
 #ifndef Protocentral_MAX30205_h
 #define Protocentral_MAX30205_h
 
-#define MAX30205_ADDRESS        0x48  // 8bit address converted to 7bit
+#define MAX30205_ADDRESS1        0x49  // 8bit address converted to 7bit
+#define MAX30205_ADDRESS2        0x48  // 8bit address converted to 7bit
 
 // Registers
 #define MAX30205_TEMPERATURE    0x00  //  get temperature ,Read only
@@ -47,6 +48,7 @@ class MAX30205
 {
   public:
    float temperature = 0;      // Last temperature
+   uint8_t max30205Address;
    void  shutdown(void);   // Instructs device to power-save
    void  printRegisters(void); // Dumps contents of registers for debug
    void  begin(void);
@@ -55,7 +57,7 @@ class MAX30205
   private:
     void    I2CwriteByte(uint8_t address, uint8_t subAddress, uint8_t data);
     void    I2CreadBytes(uint8_t address, uint8_t subAddress, uint8_t * dest, uint8_t count);
-    uint8_t I2CreadByte(uint8_t address, uint8_t subAddress);   
+    uint8_t I2CreadByte(uint8_t address, uint8_t subAddress);
 };
 
 #endif

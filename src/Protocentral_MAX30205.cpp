@@ -22,7 +22,7 @@
 float MAX30205::getTemperature(void)
 {
   uint8_t readRaw[2] = {0};
-  I2CreadBytes(MAX30205_ADDRESS,MAX30205_TEMPERATURE, &readRaw[0] ,2); // read two bytes
+  I2CreadBytes(max30205Address,MAX30205_TEMPERATURE, &readRaw[0] ,2); // read two bytes
   int16_t raw = readRaw[0] << 8 | readRaw[1];  //combine two bytes
   temperature = raw  * 0.00390625;     // convert to temperature
   return  temperature;
@@ -30,23 +30,23 @@ float MAX30205::getTemperature(void)
 
 void MAX30205::shutdown(void)
 {
-  uint8_t reg = I2CreadByte(MAX30205_ADDRESS, MAX30205_CONFIGURATION);  // Get the current register
-  I2CwriteByte(MAX30205_ADDRESS, MAX30205_CONFIGURATION, reg | 0x80);
+  uint8_t reg = I2CreadByte(max30205Address, MAX30205_CONFIGURATION);  // Get the current register
+  I2CwriteByte(max30205Address, MAX30205_CONFIGURATION, reg | 0x80);
 }
 
 void MAX30205::begin(void)
 {
-  I2CwriteByte(MAX30205_ADDRESS, MAX30205_CONFIGURATION, 0x00); //mode config
-  I2CwriteByte(MAX30205_ADDRESS, MAX30205_THYST , 		 0x00); // set threshold
-  I2CwriteByte(MAX30205_ADDRESS, MAX30205_TOS, 			 0x00); //
+  I2CwriteByte(max30205Address, MAX30205_CONFIGURATION, 0x00); //mode config
+  I2CwriteByte(max30205Address, MAX30205_THYST , 		 0x00); // set threshold
+  I2CwriteByte(max30205Address, MAX30205_TOS, 			 0x00); //
 }
 
 void MAX30205::printRegisters(void)
 {
-  Serial.println(I2CreadByte(MAX30205_ADDRESS, MAX30205_TEMPERATURE),  BIN);
-  Serial.println(I2CreadByte(MAX30205_ADDRESS, MAX30205_CONFIGURATION),  BIN);
-  Serial.println(I2CreadByte(MAX30205_ADDRESS, MAX30205_THYST), BIN);
-  Serial.println(I2CreadByte(MAX30205_ADDRESS, MAX30205_TOS), BIN);
+  Serial.println(I2CreadByte(max30205Address, MAX30205_TEMPERATURE),  BIN);
+  Serial.println(I2CreadByte(max30205Address, MAX30205_CONFIGURATION),  BIN);
+  Serial.println(I2CreadByte(max30205Address, MAX30205_THYST), BIN);
+  Serial.println(I2CreadByte(max30205Address, MAX30205_TOS), BIN);
 }
 
 // Wire.h read and write protocols
@@ -77,10 +77,10 @@ void MAX30205::I2CreadBytes(uint8_t address, uint8_t subAddress, uint8_t * dest,
 	Wire.endTransmission(false);
 	uint8_t i = 0;
 	Wire.requestFrom(address, count);  // Read bytes from slave register address
-	
+
 	while (Wire.available())
 	{
 		dest[i++] = Wire.read();
 	}
-	
+
 }
